@@ -28,7 +28,7 @@ import (
 	"github.com/cilium/ebpf/ringbuf"
 	"golang.org/x/sys/unix"
 
-	neg "github.com/carnotengine/introspection-loader/introspection-engine/ebpf-core/go-loader/negotiated"
+	neg "github.com/carnotengine/introspection-loader/negotiated"
 )
 
 type hsEvent struct {
