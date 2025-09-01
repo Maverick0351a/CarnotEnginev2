@@ -39,6 +39,10 @@ pushd introspection-engine/ebpf-core >/dev/null
 make
 popd >/dev/null
 pushd introspection-engine/ebpf-core/go-loader >/dev/null
+# Ensure dependencies are fetched and go.sum is populated
+go mod download
+go mod tidy
+# Build loader
 go build -o bin/carnot-ebpf-loader .
 popd >/dev/null
 
