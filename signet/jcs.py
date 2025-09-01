@@ -3,8 +3,9 @@
 # arrays, strings, booleans, null, and numbers). Numbers are rendered in a
 # canonical minimal form per RFC 8785 guidance.
 
-from decimal import Decimal, getcontext
+from decimal import Decimal, getcontext, InvalidOperation
 import json
+from math import isfinite
 from typing import Any
 
 # Set high precision to avoid rounding artifacts for typical inputs.
@@ -69,8 +70,15 @@ def _serialize(o: Any) -> str:
     if isinstance(o, int):
         return str(o)
     if isinstance(o, float):
-        # Convert via Decimal using Python's shortest round-trip repr
-        return _format_decimal(Decimal(str(o)))
+        # RFC 8785 disallows NaN / Infinity; they are not valid JSON numbers.
+        if not isfinite(o):
+            raise ValueError("Non-finite numbers are not permitted in JCS canonicalization")
+        # Convert via Decimal using Python's shortest round-trip repr to avoid
+        # binary floating artifacts then format per RFC rules.
+        try:
+            return _format_decimal(Decimal(str(o)))
+        except (InvalidOperation, ValueError) as e:
+            raise ValueError("Invalid float for JCS canonicalization") from e
     if isinstance(o, Decimal):
         return _format_decimal(o)
     if isinstance(o, str):

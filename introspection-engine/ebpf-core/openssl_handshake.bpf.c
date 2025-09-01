@@ -9,12 +9,13 @@
 
 char LICENSE[] SEC("license") = "Dual BSD/GPL";
 
-#define MAX_SNI 128
+#define MAX_SNI 256
 
 struct hs_state_t {
     u64 ts_ns;
     u64 ssl_ptr;
     char sni[MAX_SNI];
+    int  sni_len;
     bool sni_set;
     int  nid_group;              // negotiated group NID (best-effort)
     int  last_shared_group_n;    // last n seen for SSL_get_shared_group
@@ -33,6 +34,19 @@ struct hs_event_t {
     int  nid_group;  // OpenSSL group NID (best-effort)
     int  nid_cipher; // OpenSSL cipher NID (best-effort)
 };
+
+// --- Minimal OpenSSL forward-decls for CO-RE field access (best-effort) ---
+// These mirror a tiny subset of OpenSSL 1.1.1 / 3.x structures used only for
+// reading negotiated cipher (tmp.new_cipher->id) and group (tmp.group_id).
+// Layout may differ across distros; preserve_access_index enables CO-RE
+// relocation so unsupported builds simply yield zero values.
+struct ssl_cipher_st { unsigned long id; } __attribute__((preserve_access_index));
+struct ssl3_tmp_st {
+    struct ssl_cipher_st *new_cipher;
+    unsigned short group_id; // For TLS 1.3 key_share (if present)
+} __attribute__((preserve_access_index));
+struct ssl3_state_st { struct ssl3_tmp_st tmp; } __attribute__((preserve_access_index));
+struct ssl_st { struct ssl3_state_st *s3; } __attribute__((preserve_access_index));
 
 // TID keyed state during handshake
 struct {
@@ -104,12 +118,41 @@ int BPF_KRETPROBE(SSL_do_handshake_exit, int ret) {
     e->success = ret;
 
     // Negotiated params (best-effort)
-    e->nid_group = st->nid_group; // 0 if unknown
-    e->nid_cipher = 0;            // left unset in this scaffold
+    // 1. Start with any values collected via helper probes.
+    e->nid_group = st->nid_group; // may be 0
+    e->nid_cipher = 0;
+
+    // 2. CO-RE read of ssl->s3->tmp.new_cipher->id & group_id if ssl_ptr known.
+    if (st->ssl_ptr != 0) {
+        struct ssl_st *ssl = (struct ssl_st *) (unsigned long) st->ssl_ptr;
+        struct ssl3_state_st *s3_ptr = 0;
+        // Read s3 pointer
+        if (bpf_core_read_user(&s3_ptr, sizeof(s3_ptr), &ssl->s3) == 0 && s3_ptr) {
+            struct ssl3_tmp_st tmp_local = {};
+            if (bpf_core_read_user(&tmp_local, sizeof(tmp_local), &s3_ptr->tmp) == 0) {
+                // group_id (OpenSSL keeps this in tmp during TLS 1.3 handshake)
+                if (e->nid_group == 0 && tmp_local.group_id > 0)
+                    e->nid_group = (int)tmp_local.group_id;
+                // new_cipher pointer
+                struct ssl_cipher_st *ciph_ptr = tmp_local.new_cipher;
+                if (ciph_ptr) {
+                    unsigned long cipher_id = 0;
+                    if (bpf_core_read_user(&cipher_id, sizeof(cipher_id), &ciph_ptr->id) == 0) {
+                        // TLS cipher suite IDs occupy lower 16 bits of OpenSSL internal id
+                        int c_id16 = (int)(cipher_id & 0xFFFF);
+                        if (c_id16 > 0)
+                            e->nid_cipher = c_id16;
+                    }
+                }
+            }
+        }
+    }
 
     __builtin_memset(e->sni, 0, sizeof(e->sni));
-    if (st->sni_set) {
-        __builtin_memcpy(e->sni, st->sni, sizeof(e->sni));
+    if (st->sni_set && st->sni_len > 0) {
+        int cplen = st->sni_len;
+        if (cplen > MAX_SNI - 1) cplen = MAX_SNI - 1;
+        __builtin_memcpy(e->sni, st->sni, cplen);
     }
     int *fdp = bpf_map_lookup_elem(&ssl_to_fd, &st->ssl_ptr);
     e->fd = fdp ? *fdp : -1;
@@ -132,7 +175,11 @@ int BPF_KPROBE(SSL_ctrl_enter, void *ssl, int cmd, long larg, void *parg) {
     char buf[MAX_SNI] = {};
     long n = bpf_probe_read_user_str(buf, sizeof(buf), parg);
     if (n > 1) {
-        __builtin_memcpy(st->sni, buf, sizeof(st->sni));
+        int len = (int)(n - 1); // exclude trailing NUL
+        if (len > MAX_SNI - 1) len = MAX_SNI - 1;
+        __builtin_memset(st->sni, 0, sizeof(st->sni));
+        __builtin_memcpy(st->sni, buf, len);
+        st->sni_len = len;
         st->sni_set = true;
         bpf_map_update_elem(&hs_state, &tid, st, BPF_ANY);
     }
@@ -150,14 +197,17 @@ int BPF_KPROBE(BIO_set_conn_hostname_enter, void *bio, const char *name) {
         st_init.ts_ns = bpf_ktime_get_ns();
         st_init.ssl_ptr = 0;
         bpf_map_update_elem(&hs_state, &tid, &st_init, BPF_ANY);
-        st = &st_init; // NOTE: local copy; we will update map again below
     }
     char buf[MAX_SNI] = {};
     long n = bpf_probe_read_user_str(buf, sizeof(buf), name);
     if (n > 1) {
         struct hs_state_t *st2 = bpf_map_lookup_elem(&hs_state, &tid);
         if (st2) {
-            __builtin_memcpy(st2->sni, buf, sizeof(st2->sni));
+            int len = (int)(n - 1);
+            if (len > MAX_SNI - 1) len = MAX_SNI - 1;
+            __builtin_memset(st2->sni, 0, sizeof(st2->sni));
+            __builtin_memcpy(st2->sni, buf, len);
+            st2->sni_len = len;
             st2->sni_set = true;
             bpf_map_update_elem(&hs_state, &tid, st2, BPF_ANY);
         }

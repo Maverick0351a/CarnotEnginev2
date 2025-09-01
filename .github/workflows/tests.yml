@@ -33,6 +33,22 @@ PY
           else
             echo "No CCM yet, skipping."
           fi
-      - name: Run pytest (signet/api only)
+      - name: Run pytest with coverage
         run: |
-          pytest -q || true
+          pytest -q --cov=signet --cov=api --cov-report=term --cov-report=xml
+      - name: Enforce coverage >=80%
+        run: |
+          python - <<'PY'
+          import xml.etree.ElementTree as ET
+          t = ET.parse('coverage.xml')
+          root = t.getroot()
+          total = root.attrib.get('line-rate')
+          if total is None:
+              # fallback: compute from packages
+              rates = [float(p.attrib.get('line-rate','0')) for p in root.findall('packages/package')]
+              cov = sum(rates)/len(rates) if rates else 0
+          else:
+              cov = float(total)
+          print(f"coverage: {cov*100:.1f}%")
+          assert cov >= 0.80, f"coverage below 80%: {cov*100:.1f}%"
+PY

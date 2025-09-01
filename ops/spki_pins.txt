@@ -1,0 +1,4 @@
+# Optional SPKI pins: one per line
+# Format: host sha256/<base64>
+# Example (placeholder, not enforced unless host matches):
+# localhost sha256/AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=
