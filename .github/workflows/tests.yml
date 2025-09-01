@@ -11,7 +11,8 @@ jobs:
       - uses: actions/checkout@v4
       - name: Setup Python
         uses: actions/setup-python@v5
-        with: { python-version: '3.11' }
+        with:
+          python-version: '3.11'
       - name: Install deps
         run: |
           python -m pip install --upgrade pip
@@ -20,12 +21,14 @@ jobs:
         run: |
           if [ -f integrations/runtime/runtime.ccm.json ]; then
             python - <<'PY'
-import json, sys
-from jsonschema import validate
-doc=json.load(open('integrations/runtime/runtime.ccm.json'))
-schema=json.load(open('schema/ccm.schema.json'))
-validate(doc,schema)
-print("CCM schema OK:", len(doc.get("observations",[])))
+            import json
+            from jsonschema import validate
+            with open('integrations/runtime/runtime.ccm.json','r') as f:
+                doc = json.load(f)
+            with open('schema/ccm.schema.json','r') as f:
+                schema = json.load(f)
+            validate(doc, schema)
+            print("CCM schema OK:", len(doc.get("observations", [])))
 PY
           else
             echo "No CCM yet, skipping."

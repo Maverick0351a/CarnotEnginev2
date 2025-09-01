@@ -28,6 +28,8 @@ struct hs_event_t {
     int  success; // >0 ok
     int  fd;      // -1 if unknown
     char sni[MAX_SNI];
+    int  nid_group;  // OpenSSL group NID (best-effort)
+    int  nid_cipher; // OpenSSL cipher NID (best-effort)
 };
 
 // TID keyed state during handshake
@@ -96,12 +98,21 @@ int BPF_KRETPROBE(SSL_do_handshake_exit, int ret) {
     bpf_get_current_comm(&e->comm, sizeof(e->comm));
     e->ssl_ptr = st->ssl_ptr;
     e->success = ret;
+
+    // Default values
+    e->nid_group = 0;
+    e->nid_cipher = 0;
+
     __builtin_memset(e->sni, 0, sizeof(e->sni));
     if (st->sni_set) {
         __builtin_memcpy(e->sni, st->sni, sizeof(e->sni));
     }
     int *fdp = bpf_map_lookup_elem(&ssl_to_fd, &st->ssl_ptr);
     e->fd = fdp ? *fdp : -1;
+
+    // NOTE: Best-effort CO-RE style reads. Actual libssl internal layout varies by version.
+    // For safety in this scaffold, we leave nid_group/nid_cipher at 0 when unknown.
+    // If you have BTF or stable offsets for your libssl build, add bpf_core_read() here.
 
     bpf_ringbuf_submit(e, 0);
     bpf_map_delete_elem(&hs_state, &tid);
