@@ -152,7 +152,7 @@ int BPF_KRETPROBE(SSL_do_handshake_exit, int ret) {
     if (st->sni_set && st->sni_len > 0) {
         int cplen = st->sni_len;
         if (cplen > MAX_SNI - 1) cplen = MAX_SNI - 1;
-        __builtin_memcpy(e->sni, st->sni, cplen);
+        bpf_probe_read_kernel(e->sni, cplen, st->sni);
     }
     int *fdp = bpf_map_lookup_elem(&ssl_to_fd, &st->ssl_ptr);
     e->fd = fdp ? *fdp : -1;
@@ -172,13 +172,10 @@ int BPF_KPROBE(SSL_ctrl_enter, void *ssl, int cmd, long larg, void *parg) {
     struct hs_state_t *st = bpf_map_lookup_elem(&hs_state, &tid);
     if (!st) return 0;
 
-    char buf[MAX_SNI] = {};
-    long n = bpf_probe_read_user_str(buf, sizeof(buf), parg);
+    long n = bpf_probe_read_user_str(st->sni, sizeof(st->sni), parg);
     if (n > 1) {
         int len = (int)(n - 1); // exclude trailing NUL
         if (len > MAX_SNI - 1) len = MAX_SNI - 1;
-        __builtin_memset(st->sni, 0, sizeof(st->sni));
-        __builtin_memcpy(st->sni, buf, len);
         st->sni_len = len;
         st->sni_set = true;
         bpf_map_update_elem(&hs_state, &tid, st, BPF_ANY);
@@ -198,19 +195,15 @@ int BPF_KPROBE(BIO_set_conn_hostname_enter, void *bio, const char *name) {
         st_init.ssl_ptr = 0;
         bpf_map_update_elem(&hs_state, &tid, &st_init, BPF_ANY);
     }
-    char buf[MAX_SNI] = {};
-    long n = bpf_probe_read_user_str(buf, sizeof(buf), name);
+    struct hs_state_t *st2 = bpf_map_lookup_elem(&hs_state, &tid);
+    if (!st2) return 0;
+    long n = bpf_probe_read_user_str(st2->sni, sizeof(st2->sni), name);
     if (n > 1) {
-        struct hs_state_t *st2 = bpf_map_lookup_elem(&hs_state, &tid);
-        if (st2) {
-            int len = (int)(n - 1);
-            if (len > MAX_SNI - 1) len = MAX_SNI - 1;
-            __builtin_memset(st2->sni, 0, sizeof(st2->sni));
-            __builtin_memcpy(st2->sni, buf, len);
-            st2->sni_len = len;
-            st2->sni_set = true;
-            bpf_map_update_elem(&hs_state, &tid, st2, BPF_ANY);
-        }
+        int len = (int)(n - 1);
+        if (len > MAX_SNI - 1) len = MAX_SNI - 1;
+        st2->sni_len = len;
+        st2->sni_set = true;
+        bpf_map_update_elem(&hs_state, &tid, st2, BPF_ANY);
     }
     return 0;
 }
