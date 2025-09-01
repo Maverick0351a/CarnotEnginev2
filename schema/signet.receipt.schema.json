@@ -1,0 +1,25 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Signet Receipt",
+  "type": "object",
+  "required": ["version", "leafHash", "proof", "signature", "keyId"],
+  "properties": {
+    "version": { "type": "string", "const": "1" },
+    "leafHash": { "type": "string", "pattern": "^[A-Fa-f0-9]{64}$" },
+    "proof": {
+      "type": "array",
+      "items": { "type": "string", "pattern": "^[A-Fa-f0-9]{64}$" }
+    },
+    "signature": { "type": "string", "pattern": "^[A-Za-z0-9_=-]+$" },
+    "keyId": { "type": "string" },
+    "context": {
+      "type": "object",
+      "properties": {
+        "raw_event_hash": { "type": "string", "pattern": "^[A-Fa-f0-9]{64}$" },
+        "enrichment_hash": { "type": "string", "pattern": "^[A-Fa-f0-9]{64}$" },
+        "ccm_obs_hash": { "type": "string", "pattern": "^[A-Fa-f0-9]{64}$" }
+      },
+      "additionalProperties": true
+    }
+  }
+}

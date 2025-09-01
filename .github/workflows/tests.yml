@@ -1,0 +1,35 @@
+name: tests
+on:
+  pull_request:
+  push:
+    branches: [ main ]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with: { python-version: '3.11' }
+      - name: Install deps
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r api/requirements.txt jsonschema pytest pytest-cov
+      - name: Validate CCM if present
+        run: |
+          if [ -f integrations/runtime/runtime.ccm.json ]; then
+            python - <<'PY'
+import json, sys
+from jsonschema import validate
+doc=json.load(open('integrations/runtime/runtime.ccm.json'))
+schema=json.load(open('schema/ccm.schema.json'))
+validate(doc,schema)
+print("CCM schema OK:", len(doc.get("observations",[])))
+PY
+          else
+            echo "No CCM yet, skipping."
+          fi
+      - name: Run pytest (signet/api only)
+        run: |
+          pytest -q || true

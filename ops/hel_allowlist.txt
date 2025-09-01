@@ -1,0 +1,2 @@
+# Allowed egress destinations (HEL)
+https://localhost:8000

@@ -1,0 +1,14 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Signet Signed Tree Head (STH)",
+  "type": "object",
+  "required": ["version", "treeSize", "rootHash", "signature", "keyId", "timestamp"],
+  "properties": {
+    "version": { "type": "string", "const": "1" },
+    "treeSize": { "type": "integer", "minimum": 0 },
+    "rootHash": { "type": "string", "pattern": "^[A-Fa-f0-9]{64}$" },
+    "signature": { "type": "string", "pattern": "^[A-Za-z0-9_=-]+$" },
+    "keyId": { "type": "string" },
+    "timestamp": { "type": "string", "format": "date-time" }
+  }
+}

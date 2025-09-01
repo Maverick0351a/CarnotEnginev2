@@ -1,0 +1,59 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://carnotengine.example/schema/ccm-2.1.json",
+  "title": "Cryptographic Context Map (CCM) v2.1",
+  "type": "object",
+  "required": ["version", "observations"],
+  "properties": {
+    "version": { "type": "string", "const": "2.1" },
+    "observations": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["ts", "host", "proc", "tls"],
+        "properties": {
+          "ts": { "type": "string", "format": "date-time" },
+          "host": { "type": "string" },
+          "proc": {
+            "type": "object",
+            "required": ["pid", "tid", "name"],
+            "properties": {
+              "pid": { "type": "integer" },
+              "tid": { "type": "integer" },
+              "name": { "type": "string" }
+            }
+          },
+          "workload": {
+            "type": "object",
+            "properties": {
+              "cgroup_id": { "type": "string" },
+              "container_id": { "type": "string" }
+            },
+            "additionalProperties": true
+          },
+          "net": {
+            "type": "object",
+            "properties": {
+              "fd": { "type": "integer" },
+              "fd_capture_status": { "type": "string", "enum": ["ok", "failed", "unknown"] }
+            },
+            "additionalProperties": true
+          },
+          "tls": {
+            "type": "object",
+            "required": ["sni"],
+            "properties": {
+              "sni": { "type": "string" },
+              "sni_hashed": { "type": "boolean" },
+              "cipher_selected": { "type": "string" },
+              "group_selected": { "type": "string" },
+              "negotiated_source": { "type": "string", "enum": ["bpf_core", "cgo", "unknown"] }
+            },
+            "additionalProperties": true
+          }
+        },
+        "additionalProperties": true
+      }
+    }
+  }
+}
