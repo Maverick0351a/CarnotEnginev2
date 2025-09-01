@@ -13,17 +13,23 @@ usage(){
 }
 
 while getopts ":m:d:c:g:u:o:h" o; do
-  case "$o" in
-    m) MODE="$OPTARG";;
-    d) DUR="$OPTARG";;
-    c) CONCURRENCY="$OPTARG";;
-    g) GEN="$OPTARG";;
-    u) URL="$OPTARG";;
-    o) OUT="$OPTARG";;
-    h) usage; exit 0;;
-    *) usage; exit 1;;
-  esac
+case "$o" in
+m) MODE="$OPTARG";;
+d) DUR="$OPTARG";;
+c) CONCURRENCY="$OPTARG";;
+g) GEN="$OPTARG";;
+u) URL="$OPTARG";;
+o) OUT="$OPTARG";;
+h) usage; exit 0;;
+*) usage; exit 1;;
+esac
 done
+
+# Backward-compat: if first non-option arg is numeric, treat as seconds duration
+if [ $# -ge 1 ] && [[ "$1" =~ ^[0-9]+$ ]]; then
+DUR="${1}s"
+shift
+fi
 
 # Convert duration to seconds for sleep
 DUR_S=${DUR%s}
@@ -32,7 +38,9 @@ echo "[*] Building BPF + loader"
 pushd introspection-engine/ebpf-core >/dev/null
 make
 popd >/dev/null
-go build -o introspection-engine/ebpf-core/go-loader/bin/carnot-ebpf-loader ./introspection-engine/ebpf-core/go-loader
+pushd introspection-engine/ebpf-core/go-loader >/dev/null
+go build -o bin/carnot-ebpf-loader .
+popd >/dev/null
 
 echo "[*] Running loader for ${DUR} (sudo likely required)"
 sudo ./introspection-engine/ebpf-core/go-loader/bin/carnot-ebpf-loader -obj introspection-engine/ebpf-core/openssl_handshake.bpf.o -out "${OUT}" &
