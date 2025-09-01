@@ -12,7 +12,10 @@ jobs:
       - name: Install prereqs
         run: |
           sudo apt-get update
-          sudo apt-get install -y clang make bpftool libbpf-dev golang-go python3-pip python3-venv sqlite3 curl
+          sudo apt-get install -y clang make libbpf-dev golang-go python3-pip python3-venv sqlite3 curl
+          # Manually install bpftool
+          sudo apt-get install -y linux-tools-$(uname -r)
+          sudo cp /usr/lib/linux-tools-$(uname -r)/bpftool /usr/local/bin/bpftool || true
       - name: Setup Python
         uses: actions/setup-python@v5
         with:
