@@ -81,10 +81,14 @@ func loadBPF(path string) (*ebpf.CollectionSpec, error) {
 }
 
 func attachUprobe(bin, sym string, prog *ebpf.Program, ret bool) (link.Link, error) {
-if ret {
-return link.OpenExecutable(bin).Uretprobe(sym, prog, nil)
-}
-return link.OpenExecutable(bin).Uprobe(sym, prog, nil)
+	exe, err := link.OpenExecutable(bin)
+	if err != nil {
+		return nil, err
+	}
+	if ret {
+		return exe.Uretprobe(sym, prog, nil)
+	}
+	return exe.Uprobe(sym, prog, nil)
 }
 
 func commToString(comm [16]byte) string {
@@ -372,7 +376,7 @@ func main() {
 	defer cancel()
 
 	log.Printf("listening for handshake events… -> %s", *out)
-	enc := json.NewEncoder(f)
+	// json encoder not required; writing lines directly
 
 	for {
 		select {
