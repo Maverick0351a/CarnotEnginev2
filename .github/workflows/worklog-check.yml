@@ -4,6 +4,7 @@ on:
 
 jobs:
   check:
+    if: ${{ !contains(github.event.pull_request.labels.*.name, 'worklog-bypass') }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4

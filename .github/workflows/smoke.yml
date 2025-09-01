@@ -1,0 +1,44 @@
+name: smoke
+on:
+  pull_request:
+  push:
+    branches: [ main ]
+
+jobs:
+  smoke:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install prereqs
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y clang make libbpf-dev golang-go python3-pip python3-venv sqlite3 curl libssl-dev
+          # Manually install bpftool
+          sudo apt-get install -y linux-tools-$(uname -r)
+          sudo cp /usr/lib/linux-tools-$(uname -r)/bpftool /usr/local/bin/bpftool || true
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install Python deps
+        run: |
+          python -m venv .venv
+          . .venv/bin/activate
+          pip install -r api/requirements.txt jsonschema
+      - name: Run smoke test
+        run: |
+          . .venv/bin/activate
+          bash scripts/ebpf_smoke_test.sh 10
+      - name: Upload runtime.jsonl
+        uses: actions/upload-artifact@v4
+        with:
+          name: runtime-jsonl
+          path: integrations/runtime/runtime.jsonl
+      - name: Check group_selected
+        run: |
+          if grep -q '"group_selected"' integrations/runtime/runtime.jsonl; then
+            echo "[OK] group_selected observed"
+          else
+            echo "[FAIL] group_selected not observed"
+            exit 1
+          fi
