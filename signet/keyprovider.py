@@ -27,6 +27,12 @@ class KeyProvider:
         sig = self.current.priv.sign(msg)
         return self.current.key_id, base64.urlsafe_b64encode(sig).decode('ascii').rstrip('=')
 
+    def get_pubkey(self, kid: str):
+        """Return Ed25519 public key object for given key id or None."""
+        if kid == self.current.key_id:
+            return self.current.priv.public_key()
+        return None
+
     def jwks(self) -> Dict:
         pub = self.current.priv.public_key().public_bytes(
             encoding=serialization.Encoding.Raw,

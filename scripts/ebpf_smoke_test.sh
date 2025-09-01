@@ -27,3 +27,12 @@ sleep 1
 echo "[*] Converting to CCM"
 python3 integrations/runtime/ebpf_to_ccm.py "${OUT}" "integrations/runtime/runtime.ccm.json" || true
 ls -l integrations/runtime/
+
+# Basic sanity: ensure at least one observation with group_selected if present
+if [ -f integrations/runtime/runtime.jsonl ]; then
+  if grep -q '"group_selected"' integrations/runtime/runtime.jsonl; then
+    echo "[OK] group_selected observed"
+  else
+    echo "[WARN] group_selected not observed; check CO-RE read support for this libssl/build"
+  fi
+fi

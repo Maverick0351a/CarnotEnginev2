@@ -24,15 +24,17 @@ import (
 )
 
 type hsEvent struct {
-	Pid      uint32
-	Tid      uint32
-	TsNs     uint64
-	CgroupID uint64
-	Comm     [16]byte
-	SslPtr   uint64
-	Success  int32
-	Fd       int32
-	SNI      [128]byte
+Pid      uint32
+Tid      uint32
+TsNs     uint64
+CgroupID uint64
+Comm     [16]byte
+SslPtr   uint64
+Success  int32
+Fd       int32
+SNI      [128]byte
+NidGroup int32
+NidCipher int32
 }
 
 type ccmObs struct {
@@ -105,6 +107,41 @@ func parseContainerID(pid uint32) string {
 		}
 	}
 	return ""
+}
+
+// Minimal NID mappings; extend as needed.
+func nidToCipher(n int) string {
+    switch n {
+    case 0:
+        return ""
+    // Common TLS 1.3 ciphers (OpenSSL internal NIDs vary across versions; placeholders):
+    case 0x1301: // TLS_AES_128_GCM_SHA256 (iana code)
+        return "TLS_AES_128_GCM_SHA256"
+    case 0x1302: // TLS_AES_256_GCM_SHA384
+        return "TLS_AES_256_GCM_SHA384"
+    case 0x1303: // TLS_CHACHA20_POLY1305_SHA256
+        return "TLS_CHACHA20_POLY1305_SHA256"
+    default:
+        return ""
+    }
+}
+
+func nidToGroup(n int) string {
+    switch n {
+    case 0:
+        return ""
+    // Common groups (RFC 8446):
+    case 23:
+        return "secp256r1"
+    case 24:
+        return "secp384r1"
+    case 29:
+        return "x25519"
+    case 30:
+        return "x448"
+    default:
+        return ""
+    }
 }
 
 func main() {
@@ -198,7 +235,16 @@ func main() {
 			}
 			obs.TLS.SNI = sniVal
 			obs.TLS.SNIHashed = sniHashed
+			// Map NIDs to names (best-effort). If zero/unknown, omit.
+			cipher := nidToCipher(int(ev.NidCipher))
+			group := nidToGroup(int(ev.NidGroup))
+			if cipher != "" { obs.TLS.CipherSelected = cipher }
+			if group != "" { obs.TLS.GroupSelected = group }
+			if cipher != "" || group != "" {
+			obs.TLS.NegotiatedSource = "bpf_core"
+			} else {
 			obs.TLS.NegotiatedSource = "unknown"
+			}
 
 			line, _ := json.Marshal(obs)
 			if _, err := f.Write(append(line, '\n')); err != nil { log.Printf("write: %v", err) }
