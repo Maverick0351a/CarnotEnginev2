@@ -43,6 +43,7 @@ pushd introspection-engine/ebpf-core/go-loader >/dev/null
 go mod download
 go mod tidy
 # Build loader
+mkdir -p bin
 go build -o bin/carnot-ebpf-loader .
 popd >/dev/null
 
