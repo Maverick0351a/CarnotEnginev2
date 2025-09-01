@@ -122,31 +122,8 @@ int BPF_KRETPROBE(SSL_do_handshake_exit, int ret) {
     e->nid_group = st->nid_group; // may be 0
     e->nid_cipher = 0;
 
-    // 2. CO-RE read of ssl->s3->tmp.new_cipher->id & group_id if ssl_ptr known.
-    if (st->ssl_ptr != 0) {
-        struct ssl_st *ssl = (struct ssl_st *) (unsigned long) st->ssl_ptr;
-        struct ssl3_state_st *s3_ptr = 0;
-        // Read s3 pointer
-        if (bpf_core_read_user(&s3_ptr, sizeof(s3_ptr), &ssl->s3) == 0 && s3_ptr) {
-            struct ssl3_tmp_st tmp_local = {};
-            if (bpf_core_read_user(&tmp_local, sizeof(tmp_local), &s3_ptr->tmp) == 0) {
-                // group_id (OpenSSL keeps this in tmp during TLS 1.3 handshake)
-                if (e->nid_group == 0 && tmp_local.group_id > 0)
-                    e->nid_group = (int)tmp_local.group_id;
-                // new_cipher pointer
-                struct ssl_cipher_st *ciph_ptr = tmp_local.new_cipher;
-                if (ciph_ptr) {
-                    unsigned long cipher_id = 0;
-                    if (bpf_core_read_user(&cipher_id, sizeof(cipher_id), &ciph_ptr->id) == 0) {
-                        // TLS cipher suite IDs occupy lower 16 bits of OpenSSL internal id
-                        int c_id16 = (int)(cipher_id & 0xFFFF);
-                        if (c_id16 > 0)
-                            e->nid_cipher = c_id16;
-                    }
-                }
-            }
-        }
-    }
+    // 2. Avoid CO-RE reads from user memory in uretprobe for broad kernel support.
+    //    Cipher/group will be derived in user space via negotiated shim when enabled.
 
     __builtin_memset(e->sni, 0, sizeof(e->sni));
     if (st->sni_set && st->sni_len > 0) {
