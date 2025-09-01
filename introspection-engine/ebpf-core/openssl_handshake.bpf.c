@@ -16,6 +16,8 @@ struct hs_state_t {
     u64 ssl_ptr;
     char sni[MAX_SNI];
     bool sni_set;
+    int  nid_group;              // negotiated group NID (best-effort)
+    int  last_shared_group_n;    // last n seen for SSL_get_shared_group
 };
 
 struct hs_event_t {
@@ -75,6 +77,8 @@ int BPF_KPROBE(SSL_do_handshake_enter, void *ssl) {
     struct hs_state_t st = {};
     st.ts_ns = bpf_ktime_get_ns();
     st.ssl_ptr = (u64)ssl;
+    st.nid_group = 0;
+    st.last_shared_group_n = -1;
     bpf_map_update_elem(&hs_state, &tid, &st, BPF_ANY);
     return 0;
 }
@@ -85,7 +89,7 @@ int BPF_KRETPROBE(SSL_do_handshake_exit, int ret) {
     struct hs_state_t *st = bpf_map_lookup_elem(&hs_state, &tid);
     if (!st) return 0;
 
-    struct hs_event_t *e = bpf_ringbuf_alloc(&events, sizeof(*e), 0);
+    struct hs_event_t *e = bpf_ringbuf_reserve(&events, sizeof(*e), 0);
     if (!e) {
         bpf_map_delete_elem(&hs_state, &tid);
         return 0;
@@ -99,9 +103,9 @@ int BPF_KRETPROBE(SSL_do_handshake_exit, int ret) {
     e->ssl_ptr = st->ssl_ptr;
     e->success = ret;
 
-    // Default values
-    e->nid_group = 0;
-    e->nid_cipher = 0;
+    // Negotiated params (best-effort)
+    e->nid_group = st->nid_group; // 0 if unknown
+    e->nid_cipher = 0;            // left unset in this scaffold
 
     __builtin_memset(e->sni, 0, sizeof(e->sni));
     if (st->sni_set) {
@@ -109,10 +113,6 @@ int BPF_KRETPROBE(SSL_do_handshake_exit, int ret) {
     }
     int *fdp = bpf_map_lookup_elem(&ssl_to_fd, &st->ssl_ptr);
     e->fd = fdp ? *fdp : -1;
-
-    // NOTE: Best-effort CO-RE style reads. Actual libssl internal layout varies by version.
-    // For safety in this scaffold, we leave nid_group/nid_cipher at 0 when unknown.
-    // If you have BTF or stable offsets for your libssl build, add bpf_core_read() here.
 
     bpf_ringbuf_submit(e, 0);
     bpf_map_delete_elem(&hs_state, &tid);
@@ -161,6 +161,37 @@ int BPF_KPROBE(BIO_set_conn_hostname_enter, void *bio, const char *name) {
             st2->sni_set = true;
             bpf_map_update_elem(&hs_state, &tid, st2, BPF_ANY);
         }
+    }
+    return 0;
+}
+
+// int SSL_get_shared_group(const SSL *ssl, int n);
+SEC("uprobe/SSL_get_shared_group")
+int BPF_KPROBE(SSL_get_shared_group_enter, void *ssl, int n) {
+    u32 tid = get_tid();
+    struct hs_state_t st_init = {};
+    struct hs_state_t *st = bpf_map_lookup_elem(&hs_state, &tid);
+    if (!st) {
+        st_init.ts_ns = bpf_ktime_get_ns();
+        st_init.ssl_ptr = (u64)ssl;
+        st_init.last_shared_group_n = n;
+        bpf_map_update_elem(&hs_state, &tid, &st_init, BPF_ANY);
+    } else {
+        st->last_shared_group_n = n;
+        bpf_map_update_elem(&hs_state, &tid, st, BPF_ANY);
+    }
+    return 0;
+}
+
+SEC("uretprobe/SSL_get_shared_group")
+int BPF_KRETPROBE(SSL_get_shared_group_exit, int ret) {
+    u32 tid = get_tid();
+    struct hs_state_t *st = bpf_map_lookup_elem(&hs_state, &tid);
+    if (!st) return 0;
+    // When n == 0, ret is the negotiated group NID (>0)
+    if (st->last_shared_group_n == 0 && ret > 0) {
+        st->nid_group = ret;
+        bpf_map_update_elem(&hs_state, &tid, st, BPF_ANY);
     }
     return 0;
 }

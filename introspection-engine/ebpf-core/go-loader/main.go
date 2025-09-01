@@ -73,10 +73,10 @@ func loadBPF(path string) (*ebpf.CollectionSpec, error) {
 }
 
 func attachUprobe(bin, sym string, prog *ebpf.Program, ret bool) (link.Link, error) {
-	if ret {
-		return link.OpenExecutable(bin).Uretprobe(sym, prog, nil)
-	}
-	return link.OpenExecutable(bin).Uprobe(sym, prog, nil)
+if ret {
+return link.OpenExecutable(bin).Uretprobe(sym, prog, nil)
+}
+return link.OpenExecutable(bin).Uprobe(sym, prog, nil)
 }
 
 func commToString(comm [16]byte) string {
@@ -159,16 +159,17 @@ func main() {
 	defer coll.Close()
 
 	attach := func(name string) link.Link {
-		prog := coll.Programs[name]
-		if prog == nil { log.Printf("[warn] program not found: %s", name); return nil }
-		ret := strings.HasPrefix(name, "SSL_do_handshake_exit")
-		l, err := attachUprobe(*libssl, strings.TrimPrefix(name, "uprobe/"), prog, strings.HasPrefix(name, "uretprobe"))
-		if err != nil {
-			log.Printf("[warn] attach failed %s: %v", name, err)
-			return nil
-		}
-		log.Printf("attached %s", name)
-		return l
+	prog := coll.Programs[name]
+	if prog == nil { log.Printf("[warn] program not found: %s", name); return nil }
+	is_ret := strings.HasPrefix(name, "uretprobe/")
+	sym := strings.TrimPrefix(strings.TrimPrefix(name, "uprobe/"), "uretprobe/")
+	l, err := attachUprobe(*libssl, sym, prog, is_ret)
+	if err != nil {
+	log.Printf("[warn] attach failed %s: %v", name, err)
+	return nil
+	}
+	log.Printf("attached %s", name)
+	return l
 	}
 
 	links := []link.Link{}
